@@ -531,11 +531,11 @@ class TheSimpsonsTappedOutLocalServer:
       # Check if we have a teamtsto.org backup.
       try:
         self.land_proto.ParseFromString(f.read())
-      except google.protobuf.message.DecodeError:
+      except Exception:
         try:
           f.seek(0x0c)      # see if this might be a teamtsto.org backup
           self.land_proto.ParseFromString(f.read())          
-        except google.protobuf.message.DecodeError:
+        except Exception:
           self.log_error("Unable to load {self.town_filename} town.")
           return False
       if self.land_proto.HasField("id"):
@@ -589,11 +589,11 @@ class TheSimpsonsTappedOutLocalServer:
         # Check if we have a teamtsto.org backup.
         try:
           friend_land_proto.ParseFromString(f.read())
-        except google.protobuf.message.DecodeError:
+        except Exception:
           try:
             f.seek(0x0c)      # see if this might be a teamtsto.org backup
             friend_land_proto.ParseFromString(f.read())          
-          except google.protobuf.message.DecodeError:
+          except Exception:
             self.log_error("Unable to load {self.town_filename} town.")
             continue
 
@@ -792,6 +792,9 @@ class TheSimpsonsTappedOutLocalServer:
                             view_func = self.protoWholeLandToken)
     self.app.add_url_rule("/mh/games/bg_gameserver_plugin/checkToken/<token>/protoWholeLandToken/",
                             view_func = self.checkToken)
+    self.app.add_url_rule("/mh/games/bg_gameserver_plugin/deleteToken/<token>/protoWholeLandToken/",
+                            methods=["POST", "GET"],
+                            view_func = self.deleteToken)
     self.app.add_url_rule("/mh/games/bg_gameserver_plugin/trackingmetrics/",
                             methods=["POST"], view_func = self.trackingmetrics)
     self.app.add_url_rule("/mh/games/bg_gameserver_plugin/protoland/<land_id>/",
@@ -823,6 +826,12 @@ class TheSimpsonsTappedOutLocalServer:
     self.app.add_url_rule("/dashboard", view_func = self.dashboard)
     self.app.add_url_rule("/controller/api/update", methods=["POST"],
                             view_func = self.controller_update)
+
+    try:
+      import tsto_admin
+      tsto_admin.register_admin(self)
+    except Exception as _e:
+      self.log_error(f"[admin] failed to load: {_e}")
 
   def run(self):
     """Activates the Flask server."""
@@ -1751,6 +1760,11 @@ class TheSimpsonsTappedOutLocalServer:
     response.headers['Content-Type'] = 'application/x-protobuf'
     return response
 
+  def deleteToken(self, token):
+    # release edit lock; upstream lacks this route -> returning client 404-loops (donut)
+    self.log_debug(f"deleteToken token: {token}")
+    return make_response("", 200)
+
   def trackingmetrics(self):
     """Handler for prod.simpsons-ea.com/mh/games/bg_gameserver_plugin/trackingmetrics/"""
     self.print_headers()
@@ -1806,7 +1820,7 @@ class TheSimpsonsTappedOutLocalServer:
     currency.id = land_id
     currency.vcTotalPurchased = 0
     currency.vcTotalAwarded = 0
-    currency.vcBalance = 1234567                    # number of donuts
+    currency.vcBalance = getattr(self, "donut_balance", 1234567)                    # number of donuts
     currency.createdAt = int(round(time.time() * 1000))
     currency.updatedAt = int(round(time.time() * 1000))
 

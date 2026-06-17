@@ -3,7 +3,7 @@
   "http_debug": true,
   "server_debug_mode": true,
   "run_tutorial": false,
-  "dlc_dir": "gameassets",
+  "dlc_dir": "dlc",
   "towns_dir": "towns",
   "country": "US",
   "reverse_proxy": true,

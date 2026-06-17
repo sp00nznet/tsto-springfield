@@ -5,3 +5,7 @@ dlc/
 certs/
 gameassets/
 towns/
+townview/
+__pycache__/
+*.pyc
+.env
