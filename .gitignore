@@ -4,8 +4,8 @@ static/
 dlc/
 certs/
 gameassets/
-towns/
-townview/
+towns/*
+!towns/.gitkeep
 __pycache__/
 *.pyc
 .env

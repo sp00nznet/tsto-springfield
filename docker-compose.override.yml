@@ -1,5 +1,5 @@
 # Overrides layered on the upstream docker-compose.yml for this fork.
-# - mounts our patched server + admin module + town-viewer assets over the image
+# - mounts our patched server + admin module over the image
 # - persists player towns on the host (upstream doesn't -> saves wiped on recreate)
 # - restart policy so containers survive host reboots (upstream sets none)
 services:
@@ -8,5 +8,4 @@ services:
     volumes:
       - ./tsto_server.py:/app/tsto_server.py:ro
       - ./tsto_admin.py:/app/tsto_admin.py:ro
-      - ./townview:/app/townview:ro
       - ./towns:/app/towns
