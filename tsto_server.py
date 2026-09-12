@@ -378,6 +378,14 @@ class TheSimpsonsTappedOutLocalServer:
 
     # Establish a play mode offset (for switching events)
     self.time_offset: int = 0
+    # The clock the server reports, for reaching an event window on purpose.
+    # The client has to be moved with it -- a client that disagrees with the
+    # server about the time stalls in LoadingTaskList rather than loading the
+    # town -- so this pairs with the recompiled host's ARC_FAKE_TIME.
+    _when = os.environ.get("ARC_SERVER_TIME")
+    if _when:
+      self.set_game_mode(int(_when))
+      print(f"server clock set to {_when} (offset {self.time_offset}s)")
     self.current_play_mode: int = 0   # if non-zero, the timestamp for an event
     
     self.set_game_mode(0)
@@ -733,8 +741,19 @@ class TheSimpsonsTappedOutLocalServer:
                             view_func = self.get_direction_by_bundle)  # ios
 
     # server: oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com
-    self.app.add_url_rule(# "/netstorage/gameasset/direct/simpsons/dlc/<string:filename>",
-                          "/gameassets/<string:directory>/<string:filename>",
+    #
+    # Two spellings of one handler. "/gameassets/..." is ours, for a client
+    # pointed here deliberately; the netstorage path is the one the shipped
+    # client actually asks for, and it asks for it whatever we tell it, because
+    # the DLC host comes from the client's own build rather than from the
+    # director. A client whose traffic is redirected here wholesale arrives on
+    # that path, and without this rule the very first thing it wants --
+    # dlc/DLCIndex.zip -- is a 404 and the title stops at its error screen.
+    self.app.add_url_rule("/gameassets/<string:directory>/<string:filename>",
+                            view_func = self.dlc_download)
+    self.app.add_url_rule("/netstorage/gameasset/direct/simpsons/"
+                          "<string:directory>/<string:filename>",
+                            endpoint = "dlc_download_netstorage",
                             view_func = self.dlc_download)
 
     # server: user.sn.eamobile.com
@@ -814,6 +833,7 @@ class TheSimpsonsTappedOutLocalServer:
     self.app.add_url_rule("/mh/games/lobby/time", view_func = self.lobby_time)
     self.app.add_url_rule("/mh/users", methods=["PUT", "GET"],
                             view_func = self.mh_user)
+    self.app.add_url_rule("/mh/synergyId/", view_func = self.synergy_id)
     self.app.add_url_rule("/mh/userstats", methods=["POST"],
                             view_func = self.userstats)
 
@@ -840,7 +860,13 @@ class TheSimpsonsTappedOutLocalServer:
     http_debug = self.config.get("http_debug", False)
     listening_ip = self.config.get("listening_ip", "0.0.0.0")
     listening_port = int(self.config.get("listening_port", 9000))
-    self.app.run(debug=http_debug, host=listening_ip, port=listening_port)
+    # use_reloader=False even in debug. The reloader stats every file under the
+    # working directory on a timer, and dlc/ holds the extracted CDN content --
+    # tens of thousands of files, tens of gigabytes. Watching that does not
+    # merely slow the server down, it takes it off the air, and a dead sidecar
+    # looks exactly like a game that has stopped asking for anything.
+    self.app.run(debug=http_debug, host=listening_ip, port=listening_port,
+                 use_reloader=False)
   ##############################################################################
   # Utility functions
   ##############################################################################
@@ -1643,11 +1669,19 @@ class TheSimpsonsTappedOutLocalServer:
   # server: prod.simpsons-ea.com
 
   def lobby_time(self):
-    
-    now = self.now_int()
-    now -= 365 * 86400 * 2
-    now *= 1000
-    old_method = int(round(time.time() * 1000))
+    """The server's clock, which every other handler here reads from now_int().
+
+    This used to subtract a further two years on top of it. now_int() already
+    applies time_offset -- the setting set_game_mode exists to move -- so the
+    extra shift was a second, invisible one that only this endpoint applied:
+    the server told the client it was 2024 while dating everything else,
+    tokens and event windows included, in the present. A client that syncs its
+    clock here and then talks to the rest of the server is holding two dates,
+    and re-asks this endpoint about ten times a second trying to settle it.
+    Shift the clock with time_offset if you want an event window; do it in one
+    place.
+    """
+    now = self.now_int() * 1000
     xml = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Time><epochMilliseconds>{now}</epochMilliseconds></Time>'
     response = make_response(xml)
     response.headers['Content-Type'] = 'application/xml'
@@ -1716,6 +1750,26 @@ class TheSimpsonsTappedOutLocalServer:
     data.user.telemetryId = self.user_telemtry_id
     data.token.sessionKey = self.token_session_key
     
+    response = make_response(data.SerializeToString())
+    response.headers['Content-Type'] = 'application/x-protobuf'
+    return response
+
+  def synergy_id(self):
+    """Handler for prod.simpsons-ea.com/mh/synergyId/
+
+    The client asks for this from its loading task list, on behalf of
+    telemetry, and it is one of the tasks the list waits on -- so a 404 here
+    holds the whole boot at the loading screen even with telemetry opted out.
+    The reply is a ClientAccountId whose second field the client checks for
+    before it will accept the answer.
+    """
+    self.print_headers()
+    self.print_args()
+
+    data = ClientTelemetry_pb2.ClientAccountId()
+    data.idType = ClientTelemetry_pb2.SYNERGY_ID
+    data.idValue = str(self.user_telemtry_id)
+
     response = make_response(data.SerializeToString())
     response.headers['Content-Type'] = 'application/x-protobuf'
     return response

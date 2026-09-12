@@ -40,6 +40,9 @@ Bight Games, or Fox.
 | **`config.json` `dlc_dir` -> `"dlc"`** | Upstream ships `dlc_dir: "gameassets"` while the compose file mounts the DLC at `/app/dlc/`, so the server 404s every asset and the game shows **"cannot connect to server"** after booting. Aligned to the mount. |
 | **Crash-guard in `load_friends_data`** (`except google.protobuf.message.DecodeError` -> `except Exception`) | Upstream references an unimported name, so **any** unparseable file in `towns/` crashes startup with `NameError`. Bad files are now skipped. |
 | **`restart: unless-stopped`** (override) | Upstream sets no restart policy, so containers do not come back after a host reboot. |
+| **DLC served on the client's own CDN path too** | Upstream serves `/gameassets/<dir>/<file>`, which is the path a client we *told* would use. The shipped client asks for `/netstorage/gameasset/direct/simpsons/<dir>/<file>` whatever the director says, because the DLC host comes from its own build. A client whose traffic is redirected here wholesale arrives on that path, and without the rule the very first thing it wants -- `dlc/DLCIndex.zip` -- is a 404 and the title stops at its error screen. Both spellings now reach one handler. |
+| **`/mh/synergyId/` route added** | The client polls it during `LoadingTaskList`. Unanswered, it polls forever and never loads the town. |
+| **`use_reloader=False`, even in debug** | Flask's reloader stats every file under the working directory on a timer, and `dlc/` holds the extracted CDN content -- tens of thousands of files. Watching that does not merely slow the server down, it takes it off the air, and a dead sidecar looks exactly like a game that has stopped asking for anything. |
 | **`towns/` bind-mounted** (override) | Upstream does not persist `towns/`, so saves live in the container layer and are wiped on every `--force-recreate`. Now on the host. |
 
 ### Quality-of-life
@@ -48,6 +51,12 @@ Bight Games, or Fox.
   persisted to `towns/.donut_balance`.
 - **Default active town** -- pin the town loaded on cold/anon boot
   (`config.json` `active_town`).
+- **`ARC_SERVER_TIME`** -- set the clock the server reports at startup, as an
+  epoch, so a run can land inside a past event window without going through the
+  dashboard. It moves the same `time_offset` the play-mode selector moves. The
+  client has to be moved with it: one that disagrees with the server about the
+  time stalls in `LoadingTaskList` instead of loading the town, so this pairs
+  with the recompiled host's own `ARC_FAKE_TIME`.
 
 ### Admin panel (`/admin`)
 Configuration for the sidecar, on the same port as the game server.

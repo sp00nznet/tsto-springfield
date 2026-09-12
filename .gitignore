@@ -9,3 +9,6 @@ towns/*
 __pycache__/
 *.pyc
 .env
+
+# Backups taken before an experiment.
+config.json.bak*
